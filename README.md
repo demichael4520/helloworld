@@ -199,57 +199,57 @@ Yes, I can confirm that I am running as an agent within the Agent Gateway enviro
 [✓] End-to-end query validation PASSED!
 ```
 
-### Step 2: Verify Agent Gateway Audit Logs in Cloud Logging
-To confirm that outbound traffic from the Reasoning Engine was intercepted by the Agent Gateway, inspected via TLS, authorized by the `authzPolicy`, and returned **HTTP 200**, run the following query in **Google Cloud Logging** (Logs Explorer), replacing `<AGENT_GATEWAY_ID>` with your gateway name:
+### Step 2: Verify Agent Gateway Audit Logs via `gcloud logging read`
+To confirm from your terminal that outbound traffic from the Reasoning Engine was intercepted by the Agent Gateway, inspected via TLS, authorized by the `authzPolicy`, and returned **HTTP 200**, run the following `gcloud logging read` command:
 
-#### Cloud Logging Filter (Gateway Requests):
-```text
-resource.type="networkservices.googleapis.com/Gateway"
-resource.labels.gateway_name="<AGENT_GATEWAY_ID>"
-httpRequest.requestUrl:"aiplatform.googleapis.com"
-httpRequest.status=200
+#### 1. Query Gateway Requests (`HTTP 200` + TLS Inspection + Policy Result):
+```bash
+gcloud logging read \
+  "resource.type=\"networkservices.googleapis.com/Gateway\" AND resource.labels.gateway_name=\"$AGENT_GATEWAY_ID\" AND httpRequest.requestUrl:\"aiplatform.googleapis.com\" AND httpRequest.status=200" \
+  --project="$PROJECT_ID" \
+  --limit=3 \
+  --format="json(httpRequest, jsonPayload.tlsSniHostname, jsonPayload.enforcedGatewaySecurityPolicy.requestWasTlsIntercepted, jsonPayload.authzPolicyInfo)"
 ```
 
-**Verified Live Gateway Audit Log Entry (`HTTP 200` + TLS Intercepted + `ALLOWED`):**
+**Verified Output (`HTTP 200` + TLS Intercepted + `ALLOWED`):**
 ```json
-{
-  "httpRequest": {
-    "requestMethod": "POST",
-    "requestUrl": "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/<PROJECT_ID>/locations/us-central1/reasoningEngines/<REASONING_ENGINE_ID>/sessions",
-    "status": 200,
-    "latency": "0.337277s"
-  },
-  "jsonPayload": {
-    "tlsSniHostname": "us-central1-aiplatform.googleapis.com",
-    "enforcedGatewaySecurityPolicy": {
-      "hostname": "us-central1-aiplatform.googleapis.com",
-      "serverNameIndication": "us-central1-aiplatform.googleapis.com",
-      "requestWasTlsIntercepted": true,
-      "matchedRules": [
-        {
-          "action": "ALLOWED",
-          "name": "default_denied"
-        }
-      ]
+[
+  {
+    "httpRequest": {
+      "latency": "0.337277s",
+      "requestMethod": "POST",
+      "requestUrl": "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/<PROJECT_ID>/locations/us-central1/reasoningEngines/<REASONING_ENGINE_ID>/sessions",
+      "status": 200
     },
-    "authzPolicyInfo": {
-      "result": "ALLOWED",
-      "policies": [
-        {
-          "name": "projects/<PROJECT_NUMBER>/locations/us-central1/authzPolicies/<AUTHZ_POLICY_NAME>",
-          "result": "ALLOWED"
-        }
-      ]
+    "jsonPayload": {
+      "authzPolicyInfo": {
+        "policies": [
+          {
+            "name": "projects/<PROJECT_NUMBER>/locations/us-central1/authzPolicies/<AUTHZ_POLICY_NAME>",
+            "result": "ALLOWED"
+          }
+        ],
+        "result": "ALLOWED"
+      },
+      "enforcedGatewaySecurityPolicy": {
+        "requestWasTlsIntercepted": true
+      },
+      "tlsSniHostname": "us-central1-aiplatform.googleapis.com"
     }
   }
-}
+]
 ```
 
-#### Cloud Logging Filter (Reasoning Engine Container Logs):
-To inspect the internal stdout/stderr logs of the Reasoning Engine container:
-```text
-resource.type="aiplatform.googleapis.com/ReasoningEngine"
-resource.labels.reasoning_engine_id="<REASONING_ENGINE_ID>"
+#### 2. Query Reasoning Engine Container Logs (Stdout/Stderr):
+To inspect the internal runtime logs of your deployed Reasoning Engine container from your terminal:
+```bash
+export REASONING_ENGINE_ID=$(python3 -c "import json; print(json.load(open('.deploy_state.json'))['prod'])")
+
+gcloud logging read \
+  "resource.type=\"aiplatform.googleapis.com/ReasoningEngine\" AND resource.labels.reasoning_engine_id=\"$REASONING_ENGINE_ID\"" \
+  --project="$PROJECT_ID" \
+  --limit=10 \
+  --format="table(timestamp, severity, textPayload)"
 ```
 
 ---
