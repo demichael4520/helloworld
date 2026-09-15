@@ -124,8 +124,6 @@ The `deploy.py` script handles:
 2. Generating a unified `hello_world/.agent_engine_config.json` and `hello_world/.env` with all 12 required VPC-SC and SSL environment variables without overwriting.
 3. Invoking `adk deploy agent_engine` and caching the deployed Reasoning Engine ID in `.deploy_state.json`.
 
-> **Note on Single-Bonding Constraint:** In Private Preview, each GCP project supports one active Reasoning Engine bonded to an Agent Gateway. Always update the existing bonded Reasoning Engine ID using `--update-id <REASONING_ENGINE_ID>` (or via `.deploy_state.json`).
-
 ### Configure Environment Variables
 Set your project, region, Agent Gateway name, and target Reasoning Engine ID:
 ```bash
