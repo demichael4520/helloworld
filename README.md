@@ -136,12 +136,16 @@ The `deploy.py` script handles:
 4. Invoking `adk deploy agent_engine` and caching the deployed Reasoning Engine ID in `.deploy_state.json`.
 
 ### Configure Environment Variables
-Set your target GCP project, region, and Agent Gateway name:
+Set your target GCP project, region, and Agent Gateway name (short resource ID, e.g., `my-agent-gateway` or `my-agent-gateway`):
 ```bash
 export PROJECT_ID="<YOUR_PROJECT_ID>"
 export REGION="us-central1"
-export AGENT_GATEWAY_ID="<YOUR_AGENT_GATEWAY_ID>"
+export AGENT_GATEWAY_ID="<YOUR_AGENT_GATEWAY_ID>"   # e.g., my-agent-gateway (short ID, not full resource path)
 ```
+> **Tip:** To list available Agent Gateway IDs in your project, run:
+> ```bash
+> gcloud alpha network-services agent-gateways list --project="$PROJECT_ID" --location="$REGION"
+> ```
 
 ### Option A: Deploy a New Instance (or Update Cached Instance)
 On first run, this creates a brand-new `AGENT_IDENTITY` Reasoning Engine and saves its ID to `.deploy_state.json`. Subsequent runs automatically update the cached instance:
