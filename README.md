@@ -100,20 +100,26 @@ Deploying containerized ADK agents (`sourceCodeSpec` via `adk deploy agent_engin
 
 ## 4. Prerequisites & Setup
 
-1. **Authenticate with Google Cloud CLI:**
+1. **Clone the Repository:**
+   ```bash
+   git clone https://github.com/demichael4520/helloworld.git
+   cd helloworld
+   ```
+
+2. **Authenticate with Google Cloud CLI:**
    ```bash
    gcloud auth login
    gcloud auth application-default login
    ```
 
-2. **Create a Python Virtual Environment & Install Dependencies:**
+3. **Create a Python Virtual Environment & Install Dependencies:**
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
    ```
 
-3. **Disable Interactive ADK CLI Telemetry Prompts:**
+4. **Disable Interactive ADK CLI Telemetry Prompts:**
    The ADK CLI prompts for telemetry consent on first run, which can block automated deployments. Disable it once before deploying:
    ```bash
    adk telemetry disable
