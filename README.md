@@ -32,7 +32,7 @@ flowchart TD
         end
 
         subgraph GatewayLayer["3. Agent Gateway (Secure Web Proxy)"]
-            AGW["Agent Gateway (agw-...)\n• Forward TLS Inspection\n• AuthzPolicy Evaluation (IAP Egressor)\n• Egress Allowlist Enforcement"]
+            AGW["Agent Gateway ($AGENT_GATEWAY_ID)\n• Forward TLS Inspection\n• AuthzPolicy Evaluation (IAP Egressor)\n• Egress Allowlist Enforcement"]
         end
 
         subgraph GoogleServices["4. Governed Google Cloud Services"]
@@ -52,22 +52,26 @@ flowchart TD
 
 ## 2. Key Architectural Requirements for VPC-SC & Agent Gateway
 
-Deploying containerized ADK agents (`sourceCodeSpec` via `adk deploy agent_engine`) behind an Agent Gateway in VPC-SC requires specific runtime configurations that `deploy.py` automates out of the box:
+Deploying containerized ADK agents (`sourceCodeSpec` via `adk deploy agent_engine`) behind an Agent Gateway in VPC-SC requires specific runtime and provisioning configurations that `deploy.py` automates out of the box:
 
 ### 2.1. Forward TLS Inspection Trust Store (`ca-bundle.crt`)
 * **The Challenge:** When the Agent Gateway intercepts outbound HTTPS calls (e.g., to `us-central1-aiplatform.googleapis.com`), it re-signs the TLS certificate using an internal private Certificate Authority (`CN = Agent Gateway TLS Inspection CA`). While the Vertex AI container host injects this CA into the Linux system store (`/etc/ssl/certs/ca-certificates.crt`), Python HTTP libraries (`aiohttp`, `requests`, `certifi`) ignore the OS trust store by default and fail with `ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED]`.
 * **Schema Pitfall Warning:** In the `networkservices/v1alpha1` API response for `agent-gateways describe`, the root certificate is nested under **`agentGatewayCard.rootCertificates`**. Using `--format=value(rootCertificates)` returns an empty string `""`, resulting in an empty CA bundle.
 * **The Solution:** `deploy.py` fetches `--format=json` from `gcloud alpha network-services agent-gateways describe`, extracts `agentGatewayCard.rootCertificates`, verifies it is non-empty, combines it with `certifi`'s Mozilla root bundle into `hello_world/ca-bundle.crt`, and exports `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, and `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` pointing to `/app/agents/hello_world/ca-bundle.crt`.
 
-### 2.2. Suppressing mTLS Endpoint Redirection & Client Certificates
+### 2.2. Provisioning `AGENT_IDENTITY` at Resource Creation Time
+* **The Challenge:** When `adk deploy agent_engine` is invoked without `--agent_engine_id` to create a brand-new Reasoning Engine, the ADK CLI calls `client.agent_engines.create()` with empty arguments (`config={}`). Vertex AI provisions the new instance with default `identity_type=SERVICE_ACCOUNT` (no SPIFFE SVID). Because `identity_type` cannot be converted from `SERVICE_ACCOUNT` to `AGENT_IDENTITY` during the subsequent `update()` call, outbound calls from the container through the Agent Gateway fail authorization.
+* **The Solution:** When creating a new deployment, `deploy.py` first calls `client.agent_engines.create(config={"identity_type": "AGENT_IDENTITY", ...})` to provision the Reasoning Engine with SPIFFE Agent Identity (`agents.global.org-...`) from day one, and then passes `--agent_engine_id <NEW_ID>` to `adk deploy agent_engine`.
+
+### 2.3. Suppressing mTLS Endpoint Redirection & Client Certificates
 * **The Challenge:** Inside VPC-SC environments, workloads possess SPIFFE client certificates (`GOOGLE_API_CERTIFICATE_CONFIG`). By default, `google-auth` detects these certificates and redirects API traffic to `*.mtls.googleapis.com`. Because a forward TLS-inspecting proxy cannot terminate end-to-end client-certificate mTLS handshakes, requests fail with `403 Forbidden` or TLS handshake errors.
 * **The Solution:** Export `GOOGLE_API_USE_MTLS=never`, `GOOGLE_API_USE_MTLS_ENDPOINT=never`, and `GOOGLE_API_USE_CLIENT_CERTIFICATE=false` so all SDK calls route over standard `googleapis.com` endpoints.
 
-### 2.3. Enabling Agent Identity Token Sharing
+### 2.4. Enabling Agent Identity Token Sharing
 * **The Challenge:** Vertex AI Agent Engine uses SPIFFE Agent Identity (`identity_type: AGENT_IDENTITY`). By default, token sharing restrictions can block the runtime from propagating its identity token to downstream Google Cloud services.
 * **The Solution:** Export `GOOGLE_API_PREVENT_AGENT_TOKEN_SHARING_FOR_GCP_SERVICES=false` in both `.agent_engine_config.json` and `.env`.
 
-### 2.4. Understanding `240.0.0.2:443` (PSC VIP / DirectPath) in Agent Gateway Logs
+### 2.5. Understanding `240.0.0.2:443` (PSC VIP / DirectPath) in Agent Gateway Logs
 * When inspecting Agent Gateway request logs (`networkservices.googleapis.com/gateway_requests`), you may see `CONNECT 240.0.0.2:443` entries with `matchedRules: [{"name": "default_denied"}]`.
 * **Why this occurs:** In Private Service Connect (PSC) environments, `240.0.0.2:443` is the internal PSC Virtual IP (VIP) for the outer `HTTP CONNECT` proxy tunnel when clients resolve Google APIs.
 * **When it indicates an error vs. when it is benign:**
@@ -122,19 +126,31 @@ Deploying containerized ADK agents (`sourceCodeSpec` via `adk deploy agent_engin
 The `deploy.py` script handles:
 1. Extracting `agentGatewayCard.rootCertificates` from the Agent Gateway and building `hello_world/ca-bundle.crt`.
 2. Generating a unified `hello_world/.agent_engine_config.json` and `hello_world/.env` with all 12 required VPC-SC and SSL environment variables without overwriting.
-3. Invoking `adk deploy agent_engine` and caching the deployed Reasoning Engine ID in `.deploy_state.json`.
+3. Provisioning a new Reasoning Engine with `identity_type=AGENT_IDENTITY` (if no cached ID exists in `.deploy_state.json` and `--update-id` is not passed).
+4. Invoking `adk deploy agent_engine` and caching the deployed Reasoning Engine ID in `.deploy_state.json`.
 
 ### Configure Environment Variables
-Set your project, region, Agent Gateway name, and target Reasoning Engine ID:
+Set your target GCP project, region, and Agent Gateway name:
 ```bash
 export PROJECT_ID="<YOUR_PROJECT_ID>"
 export REGION="us-central1"
 export AGENT_GATEWAY_ID="<YOUR_AGENT_GATEWAY_ID>"
-export REASONING_ENGINE_ID="<YOUR_REASONING_ENGINE_ID>"
 ```
 
-### Deploy / Update the Bonded Instance
+### Option A: Deploy a New Instance (or Update Cached Instance)
+On first run, this creates a brand-new `AGENT_IDENTITY` Reasoning Engine and saves its ID to `.deploy_state.json`. Subsequent runs automatically update the cached instance:
 ```bash
+python deploy.py \
+  --project "$PROJECT_ID" \
+  --region "$REGION" \
+  --gateway "$AGENT_GATEWAY_ID"
+```
+
+### Option B: Update a Specific Existing Reasoning Engine ID
+To explicitly target an existing Reasoning Engine ID:
+```bash
+export REASONING_ENGINE_ID="<YOUR_REASONING_ENGINE_ID>"
+
 python deploy.py \
   --project "$PROJECT_ID" \
   --region "$REGION" \
@@ -149,28 +165,25 @@ python deploy.py \
 After deployment completes, validate the agent using both the Python SDK and Google Cloud Logging.
 
 ### Step 1: Run the End-to-End Validation Script (`validate.py`)
-Run `validate.py` to test streaming queries against the deployed Reasoning Engine:
+Run `validate.py` to test streaming queries against the deployed Reasoning Engine. By default, it automatically uses the Reasoning Engine ID saved in `.deploy_state.json`:
 ```bash
 python validate.py \
   --project "$PROJECT_ID" \
-  --region "$REGION" \
-  --engine-id "$REASONING_ENGINE_ID" \
-  --prompt "Hello! Please confirm you are responding through the Agent Gateway in $PROJECT_ID with the fixed CA bundle."
+  --region "$REGION"
 ```
+*(Or pass `--engine-id "$REASONING_ENGINE_ID"` to validate a specific Reasoning Engine ID.)*
 
 **Verified Output:**
 ```text
 [*] Initializing Vertex AI Client (project=<YOUR_PROJECT_ID>, region=us-central1)...
-[*] Connected to Reasoning Engine: projects/<YOUR_PROJECT_ID>/locations/us-central1/reasoningEngines/2635852078441824256
-[*] Sending prompt: 'Hello! Please confirm you are responding through the Agent Gateway in <YOUR_PROJECT_ID> with the fixed CA bundle.'
+[*] Connected to Reasoning Engine: projects/<YOUR_PROJECT_ID>/locations/us-central1/reasoningEngines/7840729018100875264
+[*] Sending prompt: 'Hello! Please confirm you are responding through the Agent Gateway.'
 
 [✓] Received Model Response (model: gemini-2.5-flash):
 ------------------------------------------------------------
-Hello there! It's a pleasure to connect with you.
-...
-What I can confirm is that I am `hello_world_agent`, and my purpose is to greet users and respond helpfully.
+Hello there! It's great to hear from you.
 
-How can I assist you today?
+Yes, I can confirm that I am running as an agent within the Agent Gateway environment. How can I assist you today?
 ------------------------------------------------------------
 
 [✓] End-to-end query validation PASSED!
@@ -192,9 +205,9 @@ httpRequest.status=200
 {
   "httpRequest": {
     "requestMethod": "POST",
-    "requestUrl": "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/<PROJECT_ID>/locations/us-central1/reasoningEngines/<REASONING_ENGINE_ID>/sessions/<SESSION_ID>:appendEvent",
+    "requestUrl": "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/<PROJECT_ID>/locations/us-central1/reasoningEngines/<REASONING_ENGINE_ID>/sessions",
     "status": 200,
-    "latency": "0.226036s"
+    "latency": "0.337277s"
   },
   "jsonPayload": {
     "tlsSniHostname": "us-central1-aiplatform.googleapis.com",

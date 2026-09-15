@@ -5,8 +5,22 @@ behind an Agent Gateway in VPC-SC.
 """
 
 import argparse
+import json
+from pathlib import Path
 import sys
 import vertexai
+
+STATE_FILE = Path(__file__).parent.resolve() / ".deploy_state.json"
+
+
+def _get_cached_engine_id(env: str = "prod") -> str | None:
+    if not STATE_FILE.exists():
+        return None
+    try:
+        data = json.loads(STATE_FILE.read_text())
+        return data.get(env)
+    except Exception:
+        return None
 
 
 def main() -> int:
@@ -24,9 +38,14 @@ def main() -> int:
         help="GCP region (default: us-central1).",
     )
     parser.add_argument(
+        "--env",
+        default="prod",
+        help="Environment key in .deploy_state.json (default: prod).",
+    )
+    parser.add_argument(
         "--engine-id",
-        required=True,
-        help="Reasoning Engine ID (e.g., 9096670364183822336) or full resource name.",
+        default=None,
+        help="Reasoning Engine ID or full resource name. If omitted, reads from .deploy_state.json.",
     )
     parser.add_argument(
         "--prompt",
@@ -35,10 +54,18 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    engine_id = args.engine_id or _get_cached_engine_id(args.env)
+    if not engine_id:
+        print(
+            "[ERROR] No --engine-id specified and no cached ID found in .deploy_state.json.",
+            file=sys.stderr,
+        )
+        return 1
+
     resource_name = (
-        args.engine_id
-        if args.engine_id.startswith("projects/")
-        else f"projects/{args.project}/locations/{args.region}/reasoningEngines/{args.engine_id}"
+        engine_id
+        if engine_id.startswith("projects/")
+        else f"projects/{args.project}/locations/{args.region}/reasoningEngines/{engine_id}"
     )
 
     print(f"[*] Initializing Vertex AI Client (project={args.project}, region={args.region})...")

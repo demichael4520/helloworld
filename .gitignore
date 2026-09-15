@@ -5,6 +5,9 @@ __pycache__/
 .venv/
 venv/
 
+# Deployment state cache (per-environment Reasoning Engine ID)
+.deploy_state.json
+
 # Temporary ADK deployment directories
 *_tmp*/
 

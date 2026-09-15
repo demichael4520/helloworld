@@ -213,6 +213,39 @@ def _build_command(project: str, region: str, engine_id: str | None, enable_otel
     return cmd
 
 
+def _create_agent_identity_engine(project: str, region: str) -> str:
+    """Create a lightweight Reasoning Engine with identity_type=AGENT_IDENTITY.
+
+    Why this is required:
+        When `adk deploy agent_engine` is called without `--agent_engine_id`, it calls
+        `client.agent_engines.create()` with empty `config={}`. That provisions the
+        Reasoning Engine with default `identity_type=SERVICE_ACCOUNT` (no SPIFFE SVID).
+        Because `identity_type` cannot be switched from `SERVICE_ACCOUNT` to
+        `AGENT_IDENTITY` during the subsequent `update()` call, outbound calls through
+        an Agent Gateway fail authorization. Pre-creating the instance with
+        `identity_type='AGENT_IDENTITY'` ensures SPIFFE Agent Identity is provisioned
+        from day one.
+    """
+    import vertexai
+
+    print("[*] Provisioning new Reasoning Engine with identity_type=AGENT_IDENTITY...")
+    client = vertexai.Client(project=project, location=region)
+    engine = client.agent_engines.create(
+        config={
+            "identity_type": "AGENT_IDENTITY",
+            "display_name": AGENT_DISPLAY_NAME,
+            "description": AGENT_DESCRIPTION,
+        }
+    )
+    resource_name = engine.api_resource.name
+    engine_id = resource_name.split("/")[-1]
+    effective_id = getattr(engine.api_resource.spec, "effective_identity", None)
+    print(f"[✓] Provisioned Reasoning Engine: {resource_name}")
+    if effective_id:
+        print(f"    SPIFFE Identity: {effective_id}")
+    return engine_id
+
+
 def _run_deploy(
     env: str,
     project: str,
@@ -244,6 +277,11 @@ def _run_deploy(
 
     ensure_ca_bundle(project, region, gateway, agent_dir)
     _write_agent_engine_config(env, project, region, gateway)
+
+    if not engine_id and not dry_run:
+        engine_id = _create_agent_identity_engine(project, region)
+        state[env] = engine_id
+        _save_state(state)
 
     cmd         = _build_command(project, region, engine_id, enable_otel=(env == "prod"))
     display_cmd = " ".join(f'"{tok}"' if " " in tok else tok for tok in cmd)
@@ -280,18 +318,15 @@ def _run_deploy(
         print("\n[ERROR] Deployment failed (adk reported failure in output).")
         return False
 
-    # Persist the new Agent Engine ID so future runs update rather than recreate.
-    if not engine_id:
+    # Persist the Agent Engine ID so future runs update rather than recreate.
+    if engine_id:
+        state[env] = engine_id
+        _save_state(state)
+    else:
         new_id = _extract_engine_id(full_output)
         if new_id:
             state[env] = new_id
             _save_state(state)
-        else:
-            print(
-                f"\n  [WARN] Could not parse Agent Engine resource ID from output. "
-                f"Update {STATE_FILE.name} manually if you want future runs to update "
-                "this instance rather than create a new one."
-            )
 
     print(f"\n  Done: {AGENT_DISPLAY_NAME}")
     return True
