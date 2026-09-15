@@ -1,0 +1,13 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Temporary ADK deployment directories
+*_tmp*/
+
+# OS / Editor artifacts
+.DS_Store
+*.Identifier
