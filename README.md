@@ -181,8 +181,8 @@ python validate.py \
 
 **Verified Output:**
 ```text
-[*] Initializing Vertex AI Client (project=<YOUR_PROJECT_ID>, region=us-central1)...
-[*] Connected to Reasoning Engine: projects/<YOUR_PROJECT_ID>/locations/us-central1/reasoningEngines/7840729018100875264
+[*] Initializing Vertex AI Client (project=<PROJECT_ID>, region=us-central1)...
+[*] Connected to Reasoning Engine: projects/<PROJECT_ID>/locations/us-central1/reasoningEngines/<REASONING_ENGINE_ID>
 [*] Sending prompt: 'Hello! Please confirm you are responding through the Agent Gateway.'
 
 [✓] Received Model Response (model: gemini-2.5-flash):

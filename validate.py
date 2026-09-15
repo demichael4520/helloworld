@@ -6,6 +6,7 @@ behind an Agent Gateway in VPC-SC.
 
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 import vertexai
@@ -29,12 +30,12 @@ def main() -> int:
     )
     parser.add_argument(
         "--project",
-        default="<YOUR_PROJECT_ID>",
-        help="GCP project ID (default: <YOUR_PROJECT_ID>).",
+        default=os.environ.get("PROJECT_ID") or os.environ.get("GOOGLE_CLOUD_PROJECT"),
+        help="GCP project ID (defaults to PROJECT_ID or GOOGLE_CLOUD_PROJECT env var).",
     )
     parser.add_argument(
         "--region",
-        default="us-central1",
+        default=os.environ.get("REGION") or os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1"),
         help="GCP region (default: us-central1).",
     )
     parser.add_argument(
