@@ -126,13 +126,22 @@ The `deploy.py` script handles:
 
 > **Note on Single-Bonding Constraint:** In Private Preview, each GCP project supports one active Reasoning Engine bonded to an Agent Gateway. Always update the existing bonded Reasoning Engine ID using `--update-id <REASONING_ENGINE_ID>` (or via `.deploy_state.json`).
 
+### Configure Environment Variables
+Set your project, region, Agent Gateway name, and target Reasoning Engine ID:
+```bash
+export PROJECT_ID="<YOUR_PROJECT_ID>"
+export REGION="us-central1"
+export AGENT_GATEWAY_ID="<YOUR_AGENT_GATEWAY_ID>"
+export REASONING_ENGINE_ID="<YOUR_REASONING_ENGINE_ID>"
+```
+
 ### Deploy / Update the Bonded Instance
 ```bash
 python deploy.py \
-  --project <YOUR_PROJECT_ID> \
-  --region us-central1 \
-  --gateway <YOUR_AGENT_GATEWAY_ID> \
-  --update-id 2635852078441824256
+  --project "$PROJECT_ID" \
+  --region "$REGION" \
+  --gateway "$AGENT_GATEWAY_ID" \
+  --update-id "$REASONING_ENGINE_ID"
 ```
 
 ---
@@ -145,10 +154,10 @@ After deployment completes, validate the agent using both the Python SDK and Goo
 Run `validate.py` to test streaming queries against the deployed Reasoning Engine:
 ```bash
 python validate.py \
-  --project <YOUR_PROJECT_ID> \
-  --region us-central1 \
-  --engine-id 2635852078441824256 \
-  --prompt "Hello! Please confirm you are responding through the Agent Gateway in <YOUR_PROJECT_ID> with the fixed CA bundle."
+  --project "$PROJECT_ID" \
+  --region "$REGION" \
+  --engine-id "$REASONING_ENGINE_ID" \
+  --prompt "Hello! Please confirm you are responding through the Agent Gateway in $PROJECT_ID with the fixed CA bundle."
 ```
 
 **Verified Output:**
@@ -170,12 +179,12 @@ How can I assist you today?
 ```
 
 ### Step 2: Verify Agent Gateway Audit Logs in Cloud Logging
-To confirm that outbound traffic from the Reasoning Engine was intercepted by the Agent Gateway, inspected via TLS, authorized by the `authzPolicy`, and returned **HTTP 200**, run the following query in **Google Cloud Logging** (Logs Explorer):
+To confirm that outbound traffic from the Reasoning Engine was intercepted by the Agent Gateway, inspected via TLS, authorized by the `authzPolicy`, and returned **HTTP 200**, run the following query in **Google Cloud Logging** (Logs Explorer), replacing `<AGENT_GATEWAY_ID>` with your gateway name:
 
 #### Cloud Logging Filter (Gateway Requests):
 ```text
 resource.type="networkservices.googleapis.com/Gateway"
-resource.labels.gateway_name="<YOUR_AGENT_GATEWAY_ID>"
+resource.labels.gateway_name="<AGENT_GATEWAY_ID>"
 httpRequest.requestUrl:"aiplatform.googleapis.com"
 httpRequest.status=200
 ```
@@ -185,7 +194,7 @@ httpRequest.status=200
 {
   "httpRequest": {
     "requestMethod": "POST",
-    "requestUrl": "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/<YOUR_PROJECT_ID>/locations/us-central1/reasoningEngines/2635852078441824256/sessions/7045841519206465536:appendEvent",
+    "requestUrl": "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/<PROJECT_ID>/locations/us-central1/reasoningEngines/<REASONING_ENGINE_ID>/sessions/<SESSION_ID>:appendEvent",
     "status": 200,
     "latency": "0.226036s"
   },
@@ -206,7 +215,7 @@ httpRequest.status=200
       "result": "ALLOWED",
       "policies": [
         {
-          "name": "projects/617278138609/locations/us-central1/authzPolicies/soundwave-policy",
+          "name": "projects/<PROJECT_NUMBER>/locations/us-central1/authzPolicies/<AUTHZ_POLICY_NAME>",
           "result": "ALLOWED"
         }
       ]
@@ -219,7 +228,7 @@ httpRequest.status=200
 To inspect the internal stdout/stderr logs of the Reasoning Engine container:
 ```text
 resource.type="aiplatform.googleapis.com/ReasoningEngine"
-resource.labels.reasoning_engine_id="2635852078441824256"
+resource.labels.reasoning_engine_id="<REASONING_ENGINE_ID>"
 ```
 
 ---
