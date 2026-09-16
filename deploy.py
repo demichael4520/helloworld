@@ -22,8 +22,8 @@ Usage:
     python deploy.py --dry-run              # print the adk command without running it
     python deploy.py --update-id 123456     # update an existing deployment
 
-Environment defaults are read from .env.{env} (e.g. .env.dev, .env.prod) if present,
-falling back to static ENV_DEFAULTS.  Pass --project / --region / --gateway to override.
+Configuration is resolved from CLI flags (--project / --region / --gateway),
+environment variables (PROJECT_ID, REGION, AGENT_GATEWAY_ID), or .env.{env} / .env files.
 
 The deployed Agent Engine resource ID is cached in .deploy_state.json (git-ignored)
 keyed by env so prod and dev IDs never collide.  Pass --update-id to force a specific
@@ -33,6 +33,7 @@ ID for that run (takes precedence over the state file).
 import argparse
 import certifi
 import json
+import os
 import re
 import subprocess
 import sys
@@ -44,19 +45,6 @@ from pathlib import Path
 
 REPO_ROOT  = Path(__file__).parent.resolve()
 STATE_FILE = REPO_ROOT / ".deploy_state.json"
-
-ENV_DEFAULTS: dict[str, dict] = {
-    "prod": {
-        "project": "<YOUR_PROJECT_ID>",
-        "region":  "us-central1",
-        "gateway": "my-agent-gateway",
-    },
-    "dev": {
-        "project": "<YOUR_DEV_PROJECT_ID>",
-        "region":  "us-central1",
-        "gateway": "my-dev-agent-gateway",
-    },
-}
 
 AGENT_DIR          = "hello_world"
 AGENT_DISPLAY_NAME = "Hello World Agent"
@@ -411,13 +399,37 @@ def main() -> int:
     if not _preflight_check():
         return 1
 
-    # Resolve config: CLI args > .env.{env} file > static ENV_DEFAULTS.
+    # Resolve config: CLI args > .env.{env} file > environment variables.
     env_file_vals = _load_env_file(args.env)
-    static        = ENV_DEFAULTS[args.env]
 
-    project = args.project or env_file_vals.get("project") or static["project"]
-    region  = args.region  or env_file_vals.get("region")  or static["region"]
-    gateway = args.gateway or env_file_vals.get("gateway") or static["gateway"]
+    project = (
+        args.project
+        or env_file_vals.get("project")
+        or os.environ.get("PROJECT_ID")
+        or os.environ.get("GOOGLE_CLOUD_PROJECT")
+    )
+    region = (
+        args.region
+        or env_file_vals.get("region")
+        or os.environ.get("REGION")
+        or os.environ.get("GOOGLE_CLOUD_LOCATION")
+        or "us-central1"
+    )
+    gateway = (
+        args.gateway
+        or env_file_vals.get("gateway")
+        or os.environ.get("AGENT_GATEWAY_ID")
+        or os.environ.get("GOOGLE_CLOUD_GATEWAY")
+    )
+
+    if not project or not gateway:
+        print(
+            "[ERROR] Missing required configuration: project and gateway must be specified via "
+            "--project / --gateway flags, environment variables (PROJECT_ID, AGENT_GATEWAY_ID), "
+            "or a .env file.",
+            file=sys.stderr,
+        )
+        return 1
 
     print(f"\nDeploying to project '{project}' in '{region}' [env={args.env}]")
     if args.dry_run:

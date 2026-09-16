@@ -136,7 +136,7 @@ The `deploy.py` script handles:
 4. Invoking `adk deploy agent_engine` and caching the deployed Reasoning Engine ID in `.deploy_state.json`.
 
 ### Configure Environment Variables
-Set your target GCP project, region, and Agent Gateway name (short resource ID, e.g., `my-agent-gateway` or `my-agent-gateway`):
+Set your target GCP project, region, and Agent Gateway name (short resource ID, e.g., `my-agent-gateway`):
 ```bash
 export PROJECT_ID="<YOUR_PROJECT_ID>"
 export REGION="us-central1"
